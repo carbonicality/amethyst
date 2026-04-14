@@ -87,3 +87,48 @@ async function dbGetAllKeys(store) {
         req.onerror=()=>rej(req.error);
     });
 }
+
+/*
+ * crx zip unpacker
+ * CRX2: magic(4)+version(4)+pubkey_len(4)+sig_len(4)+pubkey+sig+zip
+ * CRX3: magic(4)+version(4)+header_size(4)+proto_header+zip
+ */
+
+function crx2zip(buffer) {
+    const view=new DataView(buffer);
+    const magic=String.fromCharCode(
+        view.getUint8(0),view.getUint8(1),view.getUint8(2),view.getUint8(3)
+    );
+    if (magic !== 'Cr24') {
+        return buffer; // assume raw zip (not crx)
+    }
+    const version=view.getUint32(4,true);
+    let zipStart;
+    if (version===2) {
+        const pubKeyLen=view.getUint32(8,true);
+        const sigLen=view.getUint32(12,true);
+        zipStart=16+pubKeyLen+sigLen;
+    } else if (version === 3) {
+        const headerSize=view.getUint32(8,true);
+        zipStart=12+headerSize;
+    } else {
+        throw new Error(`unknown CRX version: ${version}`);
+    }
+    return buffer.slice(zipStart);
+}
+
+function genExtId(name) {
+    let hash=0;
+    for (let i=0;i<name.length;i++) {
+        hash=((hash<<5)-hash)+name.charCodeAt(i);
+        hash|=0;
+    }
+    const chars='abcdefghijklmnopqrstuvwxyz';
+    let id='';
+    let n=Math.abs(hash);
+    for (let i=0; i<32; i++) {
+        id+=chars[n%26];
+        n=Math.floor(n/26)+(i*7);
+    }
+    return id.substring(0,32);
+}
