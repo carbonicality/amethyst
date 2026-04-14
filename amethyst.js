@@ -132,3 +132,48 @@ function genExtId(name) {
     }
     return id.substring(0,32);
 }
+
+/*
+ *install extension from ArrayBuffer
+ */
+export async function installExtension(buffer,filename='extension.crx') {
+    const zipBuffer=crx2zip(buffer);
+    const zip=await JSZip.loadAsync(zipBuffer);
+    const manifestFile=zip.file('manifest.json');
+    if (!manifestFile) throw new Error('no manifest.json found in extension');
+    const manifestText=await manifestFile.async('text');
+    let manifest;
+    try {
+        manifest=JSON.parse(manifestText);
+    } catch (e) {
+        throw new Error('invalid manifest:'+e.message);
+    }
+    const extId=genExtId(manifest.name+(manifest.version||''));
+    console.log(`[amethyst] installing ${manifest.name} v${manifest.version} (${extId})`);
+    const files={};
+    const fileOps=[];
+    zip.forEach((path,file)=>{
+        if (!file.dir) {
+            fileOps.push(
+                file.async('arraybuffer').then(async (ab)=>{
+                    const key=`${extId}/${path}`;
+                    await dbPut(EXT_FILES_STORE,key,ab);
+                    files[path]=true;
+                })
+            );
+        }
+    });
+    await Promise.all(fileOps);
+    const extMeta={
+        id:extId,
+        manifest,
+        enabled:true,
+        installedAt:Date.now(),
+        filename,
+        fileList:Object.keys(files),
+    };
+    await dbPut(EXT_STORE,null,extMeta);
+    await loadExtension(extMeta);
+    console.log(`[amethyst] installed: ${manifest.name}`);
+    return extId;
+}
