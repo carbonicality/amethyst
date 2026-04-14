@@ -177,3 +177,50 @@ export async function installExtension(buffer,filename='extension.crx') {
     console.log(`[amethyst] installed: ${manifest.name}`);
     return extId;
 }
+
+async function readExtFile(extId,path) {
+    const key=`${extId}/${path}`;
+    const ab=await dbGet(EXT_FILES_STORE,key);
+    return ab||null;
+}
+
+async function readExtFileText(extId,path) {
+    const ab=await readExtFile(extId,path);
+    if (!ab) return null;
+    return new TextDecoder().decode(ab);
+}
+
+async function readExtFileURL(extId,path) {
+    const ab=await readExtFile(extId,path);
+    if (!ab) return null;
+    const mime=guessMime(path);
+    return URL.createObjectURL(new Blob([ab],{type:mime}));
+}
+
+function guessMime(path) {
+    const ext=path.split('.').pop().toLowerCase();
+    const map={
+        js:'application/javascript',
+        mjs:'application/javascript',
+        css:'text/css',
+        html:'text/html',
+        htm:'text/html',
+        json:'application/json',
+        png:'image/png',
+        jpg:'image/jpeg',
+        jpeg:'image/jpeg',
+        gif:'image/gif',
+        svg:'image/svg+xml',
+        webp:'image/webp',
+        ico:'image/x-icon',
+        woff:'font/woff',
+        woff2:'font/woff2',
+        ttf:'font/ttf',
+    };
+    return map[ext]||'application/octet-stream';
+}
+
+//manifest helpers
+function getMV(manifest) {
+    return parseInt(manifest.manifest_version)||2;
+}
