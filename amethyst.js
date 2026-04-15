@@ -224,3 +224,41 @@ function guessMime(path) {
 function getMV(manifest) {
     return parseInt(manifest.manifest_version)||2;
 }
+
+function getBackgroundInfo(manifest) {
+    const mv=getMV(manifest);
+    if (mv===3) {
+        //mv3, service worker
+        const sw=manifest.background?.service_worker;
+        return sw?{type:'worker',script:sw}:null;
+    } else {
+        //mv2, page or scripts
+        if (manifest.background?.page) {
+            return {type:'page',page:manifest.background.page};
+        }
+        if (manifest.background?.scripts?.length) {
+            return {type:'scripts',scripts:manifest.background.scripts};
+        }
+        return null;
+    }
+}
+
+//match a URL against a chrome extension match pattern
+//supports <all_urls>, *://*/*, https://*.example.com/path*, etc.
+
+function matchPattern(pattern,url) {
+    if (pattern==='<all_urls>') return true;
+    if (pattern==='*://*/*') return url.startsWith('https://')||url.startsWith('https://');
+    try {
+        const escaped=pattern
+            .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+            .replace(/\\\*/g, '.*')
+            .replace(/\?/g, '.');
+        const schemeMatch=escaped.match(/^([^:]+):\/\//);
+        if (!schemeMatch) return false;
+        const re=new RegExp('^'+escaped+'$');
+        return re.test(url);
+    } catch (e) {
+        return false;
+    }
+}
