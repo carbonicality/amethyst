@@ -1237,3 +1237,60 @@ async function handleShimMessage(event) {
             reply(null);
     }
 }
+
+//helper utilities
+function _buildTabObj(tabId) {
+    if (!_tabs||!tabId) return null;
+    const t=_tabs[tabId];
+    if (!t) return null;
+    return {
+        id:parseInt(tabId),
+        index:parseInt(tabId)-1,
+        windowId:1,
+        highlighted:true,
+        active:tabId==_getActiveTabId?.(),
+        pinned:false,
+        audible:false,
+        discarded:false,
+        autoDiscardable:false,
+        mutedInfo:{muted:false},
+        url:t.url||'',
+        title:t.title||'',
+        favIconUrl:'',
+        status:'complete',
+        incognito:false,
+        width:800,
+        height:600,
+    };
+}
+
+function _getIframe(tabId) {
+    if (!_tabs||!tabId) return null;
+    const t=_tabs[tabId];
+    return t?.iframe||null;
+}
+
+function injectScript(iframe,code,extId) {
+    try {
+        const doc=iframe.contentDocument;
+        if (!doc) return;
+        const script=doc.createElement('script');
+        script.textContent=code;
+        (doc.head||doc.documentElement).appendChild(script);
+    } catch (e) {
+        console.warn('[amethyst] injectScript failed: ',e);
+    }
+}
+
+function injectCSS(iframe,css) {
+    try {
+        const doc=iframe.contentDocument;
+        if (!doc) return;
+        const style=doc.createElement('style');
+        style.textContent=css;
+        (doc.head||doc.documentElement).appendChild(style);
+    } catch (e) {
+        console.warn('[amethyst] injectCSS failed: ',e);
+    }
+}
+
