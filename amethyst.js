@@ -1194,6 +1194,22 @@ async function handleShimMessage(event) {
             break;
         }
 
+        //declarativeNetRequest
+        case 'dnr.updateDynamicRules': {
+            const {addRules,removeRuleIds}=payload;
+            if (!extensions[extId]) break;
+            const ext=_extensions[extId];
+            if(!ext._dnrRules) ext._dnrRules=[];
+            if (removeRuleIds) ext._dnrRules=ext._dnrRules.filter(r=>!removeRuleIds.includes(r.id));
+            if (addRules) ext._dnrRules.push(...addRules);
+            reply(null);
+            break;
+        }
+        case 'dnr.getDynamicRules': {
+            reply(_extensions[extId]?._dnrRules||[]);
+            break;
+        }
+
         
     }
 }
