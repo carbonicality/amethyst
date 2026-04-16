@@ -840,7 +840,7 @@ async function handleShimMessage(event) {
         }
         case 'runtime.openOptionsPage': {
             const ext=_extensions[extId];
-            const optionsPage=ext?.manifest?.options_page||ext?.manifest.options_ui?page;
+            const optionsPage=ext?.manifest?.options_page||ext?.manifest.options_ui?.page;
             if (optionsPage) {
                 const url=await readExtFileURL(extId,optionsPage);
                 if (url&&_loadWebsite) _loadWebsite(url);
@@ -849,6 +849,85 @@ async function handleShimMessage(event) {
             break;
         }
         
-        
+        //tabs
+        case 'tabs.query': {
+            const result=Object.entries(_tabs||{}).map(([id,t])=>_buildTabObj(id)).filter(Boolean);
+            const q=payload;
+            const filtered=result.filter(tab=>{
+                if (q.active!==undefined&&q.active!==(tab.id==_getActiveTabId?.())) return false;
+                if (q.url&&!tab.url?.includes(q.url)) return false;
+                return true;
+            });
+            reply(filtered);
+            break;
+        }
+        case 'tabs.get': {
+            reply(_buildTabObj(payload.tabId));
+            break;
+        }
+        case 'tabs.getCurrent': {
+            reply(_buildTabObj(tabId));
+            break;
+        }
+        case 'tabs.create': {
+            if (_loadWebsite) _loadWebsite(payload.url||'');
+            reply(_buildTabObj(tabId));
+            break;
+        }
+        case 'tabs.update': {
+            if (payload.updateProps?.url&&_loadWebsite) _loadWebsite(payload.updateProps.url);
+            reply(_buildTabObj(payload.tabId||tabId));
+            break;
+        }
+        case 'tabs.sendMessage': {
+            const targetTabId=payload.tabId;
+            const tabListeners=_tabMsgListeners[targetTabId]||[];
+            tabListeners.forEach(fn=>{
+                try {
+                    fn(payload.message,{tab:_buildTabObj(tabId),id:extId},reply);
+                } catch(e) {}
+            });
+            if (!tabListeners.length) reply(null);
+            break;
+        }
+        case 'tabs.executeScript': {
+            const iframe=_getIframe(payload.tabId||tabId);
+            if (!iframe) {reply(null);break;}
+            const details=payload.details||{};
+            if (details.code) {
+                try {
+                    const result=iframe.contentWindow?.eval(details.code);
+                    reply([result]);
+                } catch (e) {reply(null);}
+            } else if (details.file) {
+                const code=await readExtFileText(extId,details.file);
+                if (code) {
+                    injectScript(iframe,code,extId);
+                    reply([null]);
+                } else {reply(null);}
+            }
+            break;
+        }
+        case 'tabs.insertCSS': {
+            const iframe=_getIframe(payload.tabId||tabId);
+            if (!iframe) {
+                reply(null);
+                break;
+            }
+            const details=payload.details||{};
+            if (details.code) {
+                injectCSS(iframe,details.code);
+            } else if (details.file) {
+                const css=await readExtFileText(extId,details.file);
+                if (css) injectCSS(iframe,css);
+            }
+            reply(null);
+            break;
+        }
+        case 'tabs.captureVisibleTab': {
+            const iframe=_getIframe(tabId);
+            reply(null);
+            break;
+        }
     }
 }
