@@ -1145,5 +1145,32 @@ async function handleShimMessage(event) {
             reply(null);
             break;
         }
+
+        //bookmarks
+        case 'bookmarks.getTree': {
+            const bms=JSON.parse(localStorage.getItem('krypton_bookmarks')||'[]');
+            const tree=[{
+                id: '0', title:'Bookmarks bar',children:bms.map((b,i)=>({
+                    id:String(i), title:b.title||b.url,url:b.url,parentId:'0'
+                }))
+            }];
+            reply(tree);
+            break;
+        }
+        case 'bookmarks.search': {
+            const bms=JSON.parse(localStorage.getItem('krypton_bookmarks')||'[]');
+            const q=typeof payload.query==='string'?payload.query.toLowerCase():'';
+            reply(bms.filter(b=>b.url?.toLowerCase().includes(q)||b.title?.toLowerCase().includes(q))
+                    .map((b,i)=>({id:String(i),title:b.title||'',url:b.url,parentId:'0'})));
+            break;
+        }
+        case 'bookmarks.create': {
+            const bms=JSON.parse(localStorage.getItem('krypton_bookmarks')||'[]');
+            bms.push({url:payload.url,title:payload.title||payload.url});
+            localStorage.setItem('krypton_bookmarks',JSON.stringify(bms));
+            reply({id:String(bms.length-1),...payload});
+            break;
+        }
+        
     }
 }
