@@ -1014,6 +1014,16 @@ async function handleShimMessage(event) {
             break;
         }
 
-        
+        //notifications
+        case 'notifications.create': {
+            const {options}=payload;
+            if (_showNotif) _showNotif(options.title||'Extension',options.message||'');
+            reply(payload.notifId);
+            break;
+        }
+        case 'notifications.clear': {
+            reply(true);
+            break;
+        }
     }
 }
