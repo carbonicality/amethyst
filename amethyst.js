@@ -1088,6 +1088,46 @@ async function handleShimMessage(event) {
             reply(null);
             break;
         }
-        
+
+        //alarms
+        case 'alarms.create': {
+            if (!_alarms[extId]) _alarms[extId]={};
+            const {name,alarmInfo}=payload;
+            const alarmName=name||'';
+            const existing=_alarms[extId][alarmName];
+            if (existing?.timer) clearInterval(existing.timer);
+            const delayMs=(alarmInfo?.delayInMinutes||0)*60000;
+            const periodMs=(alarmInfo?.periodInMinutes)?alarmInfo.periodInMinutes*60000:null;
+            const scheduledTime=Date.now()+delayMs;
+            const fire=()=>{fireEvent(extId,'alarms.onAlarm',[{name:alarmName,scheduledTime,periodInMinutes:alarmInfo?.periodInMinutes}]);};
+            let timer;
+            if (periodMs) {
+                timer=setTimeout(()=>{fire();setInterval(fire,periodMs);},delayMs);
+            } else {
+                timer=setTimeout(fire,delayMs);
+            }
+            _alarms[extId][alarmName]={alarmInfo,scheduledTime,timer};
+            reply(null);
+            break;
+        }
+        case 'alarms.get': {
+            const alarm=_alarms[extId]?.[payload.name||''];
+            reply(alarm?{name:payload.name||'',scheduledTime:alarm.scheduledTime,periodInMinutes:alarm.alarmInfo?.periodInMinutes}:null);
+            break;
+        }
+        case 'alarms.getAll': {
+            const all = Object.entries(_alarms[extId]||{}).map(([name,a])=>({
+                name,scheduledTime:a.scheduledTime,periodInMinutes:a.alarmInfo?.periodInMinutes
+            }));
+            reply(all);
+            break;
+        }
+        case 'alarms.clear': {
+            const alarm=_alarms[extId]?.[payload.name||''];
+            if (alarm?.timer) clearInterval(alarm.timer);
+            if (_alarms[extId]) delete _alarms[extId][payload.name||''];
+            reply(true);
+            break;
+        }
     }
 }
