@@ -1171,6 +1171,20 @@ async function handleShimMessage(event) {
             reply({id:String(bms.length-1),...payload});
             break;
         }
+
+        //downloads
+        case 'downloads.download': {
+            const a=document.createElement('a');
+            a.href=payload.url;
+            if (payload.filename) a.download=payload.filename;
+            else a.download='';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            reply(1);
+            break;
+        }
+
         
     }
 }
