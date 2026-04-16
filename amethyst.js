@@ -1185,6 +1185,15 @@ async function handleShimMessage(event) {
             break;
         }
 
+        //webRequest listeners
+        case 'webRequest.addListener': {
+            const {eventName,filter}=payload;
+            if(!_webReqListeners[eventName]) _webReqListeners[eventName]=[];
+            _webReqListeners[eventName].push({extId,filter});
+            reply(null);
+            break;
+        }
+
         
     }
 }
