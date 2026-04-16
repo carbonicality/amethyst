@@ -929,5 +929,42 @@ async function handleShimMessage(event) {
             reply(null);
             break;
         }
+
+        //scripting (mv3)
+        case 'scripting.executeScript': {
+            const {target,func,args:scriptArgs,files}=payload;
+            const tId=target?.tabId||tabId;
+            const iframe=_getIframe(tId);
+            if (!iframe) {reply(null);break;}
+            if (func) {
+                try {
+                    const fn=new Function('return ('+func.toString()+')')()(... (scriptArgs||[]));
+                    reply([{result:fn}]);
+                } catch (e) {reply(null);}
+            } else if (files?.length) {
+                for (const file of files) {
+                    const code=await readExtFileText(extId,file);
+                    if (code) injectScript(iframe,code,extId);
+                }
+                reply([{result:null}]);
+            } else {reply(null);}
+            break;
+        }
+        case 'scripting.insertCSS': {
+            const {target,css,files}=payload;
+            const tId=target?.tabId||tabId;
+            const iframe=_getIframe(tId);
+            if (!iframe) {reply(null);break;}
+            if (css) injectCSS(iframe,css);
+            if (files?.length) {
+                for (const file of files) {
+                    const code=await readExtFileText(extId,file);
+                    if (code) injectCSS(iframe,code);
+                }
+            }
+            reply(null);
+            break;
+        }
+        
     }
 }
