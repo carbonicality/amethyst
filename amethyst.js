@@ -734,3 +734,38 @@ function buildChromeShim(extId,tabId,isBackground) {
     }
     })();`;
 }
+
+/*
+ *shim message handler
+ *handle a message posted from the chrome shim
+ *translates the shim's requests into amethyst operations
+ */
+async function handleShimMessage(event) {
+    const d=event.data;
+    if (!d||!d.__amethyst) return;
+    const {type,extId,tabId,msgId,payload}=d;
+    const source=event.source;
+
+    function reply(result,error){
+        if (!source) return;
+        try {
+            source.postMessage({__amethyst_reply:true,extId,tabId,msgId,result,error},'*');
+        } catch (e) {}
+    }
+
+    function fireEvent(targetExtid,eventName,args) {
+        const ext=_extensions[targetExtId];
+        if (ext?.bgFrame) {
+            try {
+                ext.bgFrame.contentWindow?.postMessage({
+                    __amethyst_reply:true,extId:targetExtId,tabId:null,msgId:null,
+                    event:eventName,args
+                },'*');
+            } catch (e) {}
+        }
+    }
+
+    switch(type) {
+        
+    }
+}
