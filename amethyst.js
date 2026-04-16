@@ -966,5 +966,54 @@ async function handleShimMessage(event) {
             break;
         }
         
+        //action/browserAction
+        case 'action.setBadgeText': {
+            const {text}=payload;
+            const ext=_extensions[extId];
+            if (ext) ext._badgeText=text||'';
+            _updateExtButton(extId);
+            reply(null);
+            break;
+        }
+        case 'action.setBadgeBackground': {
+            const ext=_extensions[extId];
+            if (ext) ext._badgeColor=payload.color;
+            _updateExtButton(extId);
+            reply(null);
+            break;
+        }
+        case 'action.setIcon': {
+            const ext=_extensions[extId];
+            if (payload.imageData) {
+                if (ext) ext._iconDataUrl=typeof payload.imageData==='object'?Object.values(payload.imageData)[0]:payload.imageData;
+            } else if (payload.path) {
+                const p =typeof payload.path==='object'?Object.values(payload.path)[0]:payload.path;
+                const url=await readExtFileURL(extId,p);
+                if (url&&ext) ext._iconUrl=url;
+            }
+            _updateExtButton(extId);
+            reply(null);
+            break;
+        }
+        case 'action.setTitle': {
+            const ext=_extensions[extId];
+            if (ext) ext._title=payload.title;
+            _updateExtButton(extId);
+            reply(null);
+            break;
+        }
+        case 'action.setPopup': {
+            const ext=_extensions[extId];
+            if (ext) ext._popupPage=payload.popup;
+            reply(null);
+            break;
+        }
+        case 'action.openPopup': {
+            openExtensionPopup(extId);
+            reply(null);
+            break;
+        }
+
+        
     }
 }
