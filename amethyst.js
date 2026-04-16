@@ -1076,5 +1076,18 @@ async function handleShimMessage(event) {
             break;
         }
         
+        //contextMenus
+        case 'contextMenus.create': {
+            if (!_contextMenus[extId]) _contextMenus[extId]=[];
+            _contextMenus[extId].push(payload);
+            reply(payload.id);
+            break;
+        }
+        case 'contextMenus.removeAll': {
+            _contextMenus[extId]=[];
+            reply(null);
+            break;
+        }
+        
     }
 }
