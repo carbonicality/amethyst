@@ -1224,6 +1224,16 @@ async function handleShimMessage(event) {
             break;
         }
 
-        
+        //commands
+        case 'commands.getAll': {
+            const cmds=_extensions[extId]?.manifest?.commands||{};
+            reply(Object.entries(cmds).map(([name,cmd])=>({
+                name,description:cmd.description||'',shortcut:cmd.suggested_key?.default||''
+            })));
+            break;
+        }
+
+        default:
+            reply(null);
     }
 }
