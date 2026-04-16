@@ -1210,6 +1210,20 @@ async function handleShimMessage(event) {
             break;
         }
 
+        //management
+        case 'management.getSelf': {
+            const ext=_extensions[extId];
+            reply({id:extId,name:ext?.manifest?.name||'',version:ext?.manifest?.version||'',enabled:true,type:'extension'});
+            break;
+        }
+        case 'management.getAll': {
+            const all=Object.entries(_extensions).map(([id,ext])=>({
+                id,name:ext.manifest?.name||'',version:ext.manifest?.version||'',enabled:ext.enabled,type:'extension'
+            }));
+            reply(all);
+            break;
+        }
+
         
     }
 }
