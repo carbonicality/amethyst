@@ -818,5 +818,37 @@ async function handleShimMessage(event) {
             break;
         }
         
+        //runtime
+        case 'runtime.getManifest': {
+            reply(_extensions[extId]?.manifest||{});
+            break;
+        }
+        case 'runtime.sendMessage': {
+            const {targetExt,message}=payload;
+            const target=_extensions[targetExt||extId];
+            if (!target?.bgFrame) {reply(null);break;}
+            const bgWin=target.bgFrame.contentWindow;
+            if (!bgWin) {reply(null);break;}
+            try {
+                bgWin.postMessage({
+                    __amethyst_reply:true,extId:targetExt||extId,
+                    tabId,msgId:null,event:'runtime.onMessage',
+                    args:[message,{tab:_buildTabObj(tabId),id:extId},(resp)=>reply(resp)]
+                },'*');
+            } catch (e) {reply(null);}
+            break;
+        }
+        case 'runtime.openOptionsPage': {
+            const ext=_extensions[extId];
+            const optionsPage=ext?.manifest?.options_page||ext?.manifest.options_ui?page;
+            if (optionsPage) {
+                const url=await readExtFileURL(extId,optionsPage);
+                if (url&&_loadWebsite) _loadWebsite(url);
+            }
+            reply({});
+            break;
+        }
+        
+        
     }
 }
