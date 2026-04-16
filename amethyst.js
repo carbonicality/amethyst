@@ -1129,5 +1129,21 @@ async function handleShimMessage(event) {
             reply(true);
             break;
         }
+
+        //history
+        case 'history.search': {
+            const kryptonHistory=JSON.parse(localStorage.getItem('krypton_history')||'[]');
+            const q=(payload.text||'').toLowerCase();
+            const results=kryptonHistory
+                .filter(h=>h.url?.toLowerCase().includes(q)||h.title?.toLowerCase().includes(q))
+                .slice(0,payload.maxResults||100)
+                .map(h=>({id:h.timestamp?.toString(),url:h.url,title:h.title,lastVisitTime:h.timestamp,visitCount:1}));
+                reply(results);
+                break;
+        }
+        case 'history.addUrl': {
+            reply(null);
+            break;
+        }
     }
 }
