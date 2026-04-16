@@ -1061,6 +1061,20 @@ async function handleShimMessage(event) {
             break;
         }
 
+        //i18n
+        case 'i18n.getMessage': {
+            const {messageName,substitutions}=payload;
+            const ext=_extensions[extId];
+            const msg=ext?._messages?.[messageName];
+            if (!msg) {reply('');break;}
+            let text=msg.message||'';
+            if (substitutions){
+                const subs=Array.isArray(substitutions)?substitutions:[substitutions];
+                subs.forEach((s,i)=>{text=text.replace(new RegExp('\\$'+(i+1),'g'),s);});
+            }
+            reply(text);
+            break;
+        }
         
     }
 }
