@@ -1025,5 +1025,42 @@ async function handleShimMessage(event) {
             reply(true);
             break;
         }
+
+        //cookies 
+        case 'cookies.get': {
+            const frame=_getIframe(tabId);
+            let val=null;
+            if (iframe) {
+                try {
+                    const all=iframe.contentDocument?.cookie?.split(';')||[];
+                    const found=all.find(c=>c.trim().startsWith(payload.name+'='));
+                    if (found) {
+                        const value=found.split('=').slice(1).join('=').trim();
+                        val={name:payload.name,value,domain:payload.domain||'',path:'/'};
+                    }
+                } catch (e) {}
+            }
+            reply(val);
+            break;
+        }
+        case 'cookies.set': {
+            const iframe=_getIframe(tabId);
+            if (iframe) {
+                try {
+                    let c=`${payload.name}=${payload.value}`;
+                    if (payload.path) c+=`;path=${payload.path}`;
+                    if (payload.domain) c+=`;domain=${payload.domain}`;
+                    iframe.contentDocument.cookie=c;
+                } catch (e) {}
+            }
+            reply(null);
+            break;
+        }
+        case 'cookies.getAll': {
+            reply([]);
+            break;
+        }
+
+        
     }
 }
