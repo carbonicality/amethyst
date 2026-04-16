@@ -766,6 +766,57 @@ async function handleShimMessage(event) {
     }
 
     switch(type) {
+        //storage
+        case 'storage.get': {
+            const {area,keys}=payload;
+            const result={};
+            const allKeys=await dbGetAllKeys(EXT_STORAGE_STORE);
+            const prefix=`${extId}/${area}`;
+            const relevantKeys=allKeys.filter(k=>k.startsWith(prefix));
+            for (const k of relevantKeys) {
+                const shortKey=k.slice(prefix.length);
+                let include=false;
+                if (keys===null||keys===undefined) include=true;
+                else if (typeof keys==='string') include=shortKey===keys;
+                else if (Array.isArray(keys)) include=keys.includes(shortKey);
+                else if (typeof keys==='object') include=shortKey in keys;
+                if (include) result[shortKey]=await dbGet(EXT_STORAGE_STORE,k);
+            }
+            if (typeof keys==='object'&&!Array.isArray(keys)&&keys!==null) {
+                Object.entries(keys).forEach(([k,v])=>{
+                    if (!(k in result)) result[k]=v;
+                });
+            }
+            reply(result);
+            break;
+        }
+        case 'storage.get': {
+            const {area,items} = payload;
+            for (const [key,value] of Object.entries(items)) {
+                await dbPut(EXT_STORAGE_STORE,`${extId}/${area}/${key}`,value);
+            }
+            reply({});
+            break;
+        }
+        case 'storage.remove': {
+            const {area,keys}=payload;
+            const arr=Array.isArray(keys)?keys:[keys];
+            for (const key of arr) {
+                await dbDelete(EXT_STORAGE_STORE,`${extId}/${area}/${key}`);
+            }
+            reply({});
+            break;
+        }
+        case 'storage.clear': {
+            const {area}=payload;
+            const allKeys=await dbGetAllKeys(EXT_STORAGE_STORE);
+            const prefix=`${extId}/${area}/`;
+            for (const k of allKeys.filter(k=>k.startsWith(prefix))) {
+                await dbDelete(EXT_STORAGE_STORE,k);
+            }
+            reply({});
+            break;
+        }
         
     }
 }
