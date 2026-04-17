@@ -1798,3 +1798,31 @@ export function checkDNR(requestUrl,initiatorUrl,resourceType) {
     }
     return null;
 }
+
+//keyboard shortcut handler
+function initKeyboardShortcuts() {
+    document.addEventListener('keydown',(e)=>{
+        for (const [extId,ext] of Object.entries(_extensions)) {
+            if (!ext.enabled) continue;
+            const commands=ext.manifest?.commands||{};
+            for (const [cmdName,cmd] of Object.entries(commands)) {
+                const shortcut=cmd.suggested_key?.default||cmd.suggested_key?.windows||'';
+                if (!shortcut) continue;
+                const parts=shortcut.toLowerCase().split('+').map(s=>s.trim());
+                const needsCtrl=parts.includes('ctrl');
+                const needsShift=parts.includes('shift');
+                const needsAlt=parts.includes('alt');
+                const key=parts.find(p=>!['ctrl','shift','alt','command'].includes(p));
+                if (
+                    (needsCtrl?e.ctrlKey||e.metaKey:true)&&
+                    (needsShift?e.shiftKey:!e.shiftKey)&&
+                    (needsAlt?e.altKey:!e.altKey)&&
+                    key&&e.key.toLowerCase()===key
+                ) {
+                    e.preventDefault();
+                    fireEvent2Ext(extId,'commands.onCommand',[cmdName]);
+                }
+            }
+        }
+    });
+}
