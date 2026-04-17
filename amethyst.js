@@ -1633,3 +1633,112 @@ async function renderExtButton(extId) {
 function _updateExtButton(extId) {
     renderExtButton(extId);
 }
+
+//context menu injection
+export function injectContextMenu(iframe,tabId,url) {
+    iframe.addEventListener('load',()=>{
+        try {
+            const doc=iframe.contentDocument;
+            if (!doc) return;
+            const code=`
+            document.addEventListener('contextmenu',function(e) {
+                e.preventDefault();
+                window.parent.postMessage({
+                    __amethyst_contextmenu:true,
+                    x:e.clientX,y:e.clientY,
+                    targetTag:e.target.tagName,
+                    targetSrc:e.target.src || e.target.href || '',
+                    selectedText:window.getSelection().toString(),
+                    pageUrl:location.href,
+                    tabId:${JSON.stringify(tabId)},
+                },'*');
+            });`;
+            const script=doc.createElement('script');
+            script.textContent=code;
+            (doc.head||doc.documentElement).appendChild(script);
+        } catch (e) {}
+    });
+}
+
+function showContextMenu(x,y,items) {
+    document.getElementById('amethyst-ctx-menu')?.remove();
+    if (!items.length) return;
+    const menu=document.createElement('div');
+    menu.id='amethyst-ctx-menu';
+    menu.style.cssText=`
+    position:fixed;
+    top:${y}px;
+    left:${x}px;
+    background:#0f0f0f;
+    border:1px solid #1a1a1a;
+    border-radius:6px;
+    min-width:160px;
+    z-index:99999999999;
+    box-shadow:0 8px 24px rgba(0,0,0,0.5);
+    overflow:hidden;
+    padding:4px 0;
+    animation:amethystPopIn 0.12s ease;
+    font-family:'Geist',sans-serif;`;
+    for (const item of items) {
+        if (item.type==='separator') {
+            const sep=document.createElement('div');
+            sep.style.cssText='height:1px;background:#1a1a1a;margin:4px 0;';
+            menu.appendChild(sep);
+            continue;
+        }
+        const el=document.createElement('div');
+        el.style.cssText='padding: 8px 14px;font-size:13px;color:#e0e0e0;cursor:pointer;transition:background 0.15s;';
+        el.textContent=item.title;
+        el.addEventListener('mouseover',()=>el.style.background='#1a1a1a');
+        el.addEventListener('mouseout',()=>el.style.background='');
+        el.addEventListener('click',()=>{
+            item.onclick?.();
+            menu.remove();
+        });
+        menu.appendChild(el);
+    }
+    document.body.appendChild(menu);
+    document.addEventListener('click',()=>menu.remove(),{once:true});
+    document.addEventListener('contextmenu',()=>menu.remove(),{once:true});
+}
+
+window.addEventListener('message',(e)=>{
+    if (!e.data?.__amethyst_contextmenu) return;
+    const {x,y,tabId,selectedText,targetTag,targetSrc,pageUrl}=e.data;
+    const menuItems=[];
+    const info={
+        menuItemId:'',
+        editable:false,
+        pageUrl,
+        selectionText:selectedText,
+        srcUrl:targetTag==='IMG'||targetTag==='VIDEO'?targetSrc:undefined,
+        linkUrl:targetTag==='A'?targetSrc:undefined,
+    };
+
+    for (const [extId,items] of Object.entries(_contextMenus)) {
+        for (const item of items) {
+            const contexts=item.contexts||['all'];
+            let relevant=contexts.includes('all')||contexts.includes('page');
+            if (selectedText&&contexts.includes('selection')) relevant=true;
+            if (info.linkUrl&&contexts.includes('link')) relevant=true;
+            if (info.srcUrl&&contexts.includes('image')) relevant=true;
+
+            if (relevant) {
+                menuItems.push({
+                    title:item.title,
+                    onclick:()=>{
+                        const clickInfo = {...info,menuItemId:item.id};
+                        fireEvent2Ext(extId,'contextMenus.onClicked',[clickInfo,_buildTabObj(tabId)]);
+                        if (item.onclick) item.onclick(clickInfo,_buildTabObj(tabId));
+                    }
+                });
+            }
+        }
+        if (menuItems.length) menuItems.push({type:'separator'});
+    }
+    if (menuItems.length) {
+        if (menuItems[menuItems.length-1]?.type==='separator') menuItems.pop();
+        showContextMenu(x,y,menuItems);
+    }
+});
+
