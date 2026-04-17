@@ -1879,3 +1879,236 @@ async function loadExtension(meta) {
         await startBackground(extId);
     }
 }
+
+async function loadMessages(extId,manifest) {
+    const ext=_extensions[extId];
+    const defaultLocale=manifest.default_locale||'en';
+    const msgPath=await readExtFileText(extId,msgPath);
+    if (msgPath) {
+        try {
+            ext._messages=JSON.parse(msgText);
+        } catch (e) {}
+    }
+    if (!Object.keys(ext._messages).length&&defaultLocale!=='en') {
+        const enText=await readExtFileText(extId,'_locales/en/messages.json');
+        if (enText) {
+            try {ext._messages=JSON.parse(enText);} catch (e) {}
+        }
+    }
+}
+
+//ext manager ui
+export function openExtManager() {
+    document.getElementById('amethyst-manager')?.remove();
+    const overlay=document.createElement('div');
+    overlay.id='amethyst-manager';
+
+    overlay.style.cssText=`
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.85);
+    backdrop-filter:blur(8px);
+    z-index:999999999999;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family:'Geist',sans-serif;
+    animation:fadeIn 0.2s ease;`;
+
+    const panel=document.createElement('div');
+    panel.style.cssText=`
+    background:#0a0a0a;
+    border:1px solid #1a1a1a;
+    border-radius:12px;
+    width:520px;
+    max-width:95vw;
+    max-height:80vh;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    box-shadow:0 20px 60px rgba(0,0,0,0.6);`;
+
+    const header=document.createElement('div');
+    header.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1a1a1a;flex-shrink:0;';
+    header.innerHTML=`
+    
+    <div class="display:flex;align-items:center;gap:10px;">
+        <div style="width:28px;height:28px;background:rgba(167,139,250,0.15);border:1px solid rgba(167,139,250,0.3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;"><i data-lucide="stone"></i></div>
+        <div>
+            <div style="font-size:14px;font-weight:600;color:#e0e0e0;">amethyst</div>
+            <div style="font-size:11px;color:#505050;">extension runtime</div>
+        </div>
+    </div>
+    <button id="amethyst-mgr-close" style="background:transparent;border:none;color:#808080;cursor:pointer;font-size:18px;padding:4px;border-radius:4px;"><i data-lucide="x"></i></button>
+    `;
+
+    const installArea=document.createElement('div');
+    installArea.style.cssText='padding:12px 20px;border-bottom:1px solid #1a1a1a;flex-shrink:0;';
+    installArea.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:center;">
+        <label for="amethyst-crx-input" style="flex:1;">
+            <div style="background:#0f0f0f;border:1px dashed #2a2a2a;border-radius:8px;padding:10px 14px;cursor:pointer;transition:border-color:0.2s;text-align:center;font-size:12px;color:#505050;" id="amethyst-drop-zone">
+                Drop crx or zip here or click to browse
+            </div>
+            <input type="file" id="amethyst-crx-input"accept=".crx,.zip" style="display:none;">
+        </label>
+    </div>`;
+    
+    const list=document.createElement('div');
+    list.id='amethyst-ext-list';
+    list.style.cssText='flex:1;overflow-y:auto;padding:12px 20px;display:flex;flex-direction:column;gap:8px;scrollbar-width:thin;scrollbar-color:#2a2a2a transparent;';
+
+    panel.appendChild(header);
+    panel.appendChild(installArea);
+    panel.appendChild(list);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    _refreshExtList(list);
+
+    document.getElementById('amethyst-mgr-close').addEventListener('click',()=>overlay.remove());
+    overlay.addEventListener('click',(e)=>{if (e.target===overlay)overlay.remove();});
+
+    const fileInput=document.getElementById('amethyst-crx-input');
+    const dropZone=document.getElementById('amethyst-drop-zone');
+
+    fileInput.addEventListener('change',async (e)=>{
+        const file=e.target.files[0];
+        if (!file) return;
+        await _handleInstallFile(file,list);
+    });
+
+    dropZone.addEventListener('dragover',(e)=>{e.preventDefault();dropZone.style.borderColor='#a78bfa';});
+    dropZone.addEventListener('dragleave',()=>{dropZone.style.borderColor='#2a2a2a';});
+    dropZone.addEventListener('drop',async (e)=>{
+        e.preventDefault();
+        dropZone.style.borderColor='#2a2a2a';
+        const file=e.dataTransfer.files[0];
+        if (file) await _handleInstallFile(file,list);
+    });
+}
+
+async function _handleInstallFile(file,list) {
+    const dropZone=document.getElementById('amethyst-drop-zone');
+    if (dropZone) {
+        dropZone.textContent=`Installing ${file.name}...`;
+        dropZone.style.color='#a78bfa';
+    }
+    try {
+        const buffer=await file.arrayBuffer();
+        const extId =await installExtension(buffer,file.name);
+        const ext=_extensions[extId];
+        if (_showNotif) _showNotif('Extension installed',`${ext?.manifest?.name||file.name} is now active.`);
+        _refreshExtList(list);
+    } catch (err) {
+        if (_showNotif) _showNotif('Install failed',err.message);
+        console.error('[amethyst] install error: ',err);
+    }
+    if (dropZone) {
+        dropZone.textContent='Drop crx or zip here, or click to browse';
+        dropZone.style.color='#505050';
+    }
+}
+
+function _refreshExtList(list) {
+    list.innerHTML='';
+    const exts=Object.entries(_extensions);
+    if(!exts.length) {
+        list.innerHTML='<div style="color:#505050;font-size:12px;text-align:center;padding:20px;">No extensions installed. Drop a .crx or .zip to install one.</div>';
+        return;
+    }
+    for (const [extId,ext] of exts) {
+        const card=document.createElement('div');
+        card.style.cssText=`
+        background:#0f0f0f;
+        border:1px solid #1a1a1a;
+        border-radius:8px;
+        padding:12px 14px;
+        display:flex;
+        align-items:center;
+        gap:12px;
+        transition:border-color 0.2s;`;
+
+        card.addEventListener('mouseover',()=>card.style.borderColor='#2a2a2a');
+        card.addEventListener('mouseout',()=>card.style.borderColor='#1a1a1a');
+
+        const iconEl=document.createElement('div');
+        iconEl.style.cssText=`
+        width:36px;
+        height:36px;
+        flex-shrink:0;
+        border-radius:8px;
+        overflow:hidden;
+        background:#1a1a1a;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        font-size:18px;`;
+        
+        const iconPath=_getDefaultIcon(ext.manifest);
+        if (iconPath) {
+            readExtFileURL(extId,iconPath).then(url=>{
+                if (url) {
+                    const img=document.createElement('img');
+                    img.src=url;
+                    img.style.cssText='width:100%;height:100%;object-fit:contain;';
+                    iconEl.innerHTML='';
+                    iconEl.appendChild(img);
+                }
+            });
+        } else {
+            iconEl.textContent='<i data-lucide="puzzle"></i>';
+        }
+        const info = document.createElement('div');
+        info.style.cssText=`flex:1;min-width:0;`;
+        info.innerHTML=`
+        <div style="font-size:13px;font-weight:500;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ext.manifest.name||'Unknown'}</div>
+        <div style="font-size:11px;color:#505050;margin-top:2px;">v${ext.manifest.version||'?'} - MV${getMV(ext.manifest)}</div>`;
+        
+        const actions=document.createElement('div');
+        actions.style.cssText='display:flex;gap:6px;flex-shrink:0;';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.style.cssText=`
+        padding:4px 10px;
+        border-radius:4px;
+        font-size:11px;
+        font-family:'Geist';
+        cursor:pointer;
+        border:1px solid ${ext.enabled?'#1a3a1a':'#2a2a2a'};
+        background: ${ext.enabled?'rgba(34,197,94,0.1)':transparent};
+        color:${ext.enabled?'#22c55e':'#808080'};
+        transition: all 0.2s;`;
+        toggleBtn.textContent=ext.enabled?'On':'Off';
+        toggleBtn.addEventListener('click',async ()=>{
+            ext.enabled=!ext.enabled;
+            const stored=await dbGet(EXT_STORE,extId);
+            if (store) {stored.enabled=ext.enabled;await dbPut(EXT_STORE,null,stored);}
+            if (ext.enabled) {
+                await startBackground(extId);
+                await renderExtButton(extId);
+            } else {
+                ext.bgFrame?.remove();
+                ext.bgFrame=null;
+                document.querySelector(`[data-amethyst-extid="${extId}"]`)?.remove();
+            }
+            _refreshExtList(list);
+        });
+
+        const removeBtn = document.createElement('button');
+        removeBtn.style.cssText="padding:4px 10px;border-radius:4px;font-size:11px;font-family:'Geist';cursor:pointer;border:1px solid rgba(239,68,68,0.2);background:transparent;color:#ef4444;transition:all 0.2s;";
+        removeBtn.textContent='Remove';
+        removeBtn.addEventListener('click', async ()=>{
+            await uninstallExtension(extId);
+            _refreshExtList(list);
+        });
+
+        actions.appendChild(toggleBtn);
+        actions.appendChild(removeBtn);
+        card.appendChild(iconEl);
+        card.appendChild(info);
+        card.appendChild(actions);
+        list.appendChild(card);
+    }
+}
+
