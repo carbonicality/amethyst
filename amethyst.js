@@ -2152,3 +2152,62 @@ export function getInstalledExts() {
         manifest:ext.manifest,
     }));
 }
+
+//init
+export async function init(opts={}) {
+    _tabs=opts.tabs||{};
+    _loadWebsite=opts.loadWebsite||null;
+    _showNotif=opts.showNotif||null;
+    _getActiveTabId=opts.getActiveTabId||null;
+
+    window.addEventListener('message',handleShimMessage);
+
+    const stored=await dbGetAll(EXT_STORE);
+    for (const meta of stored) {
+        try {
+            await loadExtension(meta);
+        } catch (e) {
+            console.error('[amethyst] failed to load extension: ',meta.id,e);
+        }
+    }
+    initKeyboardShortcuts();
+    _hook();
+    console.log(`[amethyst] ready, ${stored.length} extension(s) loaded`);
+}
+
+function _hook() {
+    const drMenu=document.getElementById('drMenu');
+    if (!drMenu) return;
+
+    const existing=document.getElementById('amethystExtItem');
+    if (existing) return;
+
+    const item=document.createElement('div');
+    item.id='amethystExtItem';
+    item.className='menu-item';
+    item.innerHTML=`
+    <i data-lucide="puzzle"></i>
+    <span>Extensions</span>`;
+    item.addEventListener('click',()=>{
+        drMenu.classList.remove('show');
+        openExtManager();
+    });
+
+    const aboutItem=document.getElementById('aboutItem');
+    if (aboutItem) drMenu.insertBefore(item,aboutItem);
+    else drMenu.appendChild(item);
+}
+
+const amethyst={
+    init,
+    installExtension,
+    uninstallExtension,
+    injectContentScripts,
+    injectContextMenu,
+    openExtPopup,
+    closeExtPopup,
+    getInstalledExts,
+    checkDNR,
+};
+
+export default amethyst;
