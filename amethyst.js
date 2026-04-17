@@ -12,7 +12,7 @@ const EXT_FILES_STORE='extension_files';
 const EXT_STORAGE_STORE='extension_storage';
 
 const _extensions={};
-const _contentScriptTag=[];
+const _contentScriptReg=[];
 const _msgListeners={};
 const _tabMsgListeners={};
 const _webReqListeners={};
@@ -65,6 +65,8 @@ async function dbPut(store,key,value) {
     return new Promise((res,rej)=>{
         const tx=db.transaction(store,'readwrite');
         const req=(key===null)?tx.objectStore(store).put(value):tx.objectStore(store).put(value,key);
+        req.onsuccess=()=>res(req.result);
+        req.onerror=()=>rej(req.error);
     });
 }
 
@@ -74,6 +76,16 @@ async function dbDelete(store,key) {
         const tx=db.transaction(store,'readwrite');
         const req=tx.objectStore(store).delete(key);
         req.onsuccess=()=>res();
+        req.onerror=()=>rej(req.error);
+    });
+}
+
+async function dbGetAll(store) {
+    const db=await openDB();
+    return new Promise((res,rej)=>{
+        const tx=db.transaction(store,'readonly');
+        const req=tx.objectStore(store).getAll();
+        req.onsuccess=()=>res(req.result);
         req.onerror=()=>rej(req.error);
     });
 }
@@ -248,7 +260,7 @@ function getBackgroundInfo(manifest) {
 
 function matchPattern(pattern,url) {
     if (pattern==='<all_urls>') return true;
-    if (pattern==='*://*/*') return url.startsWith('https://')||url.startsWith('https://');
+    if (pattern==='*://*/*') return url.startsWith('http://')||url.startsWith('https://');
     try {
         const escaped=pattern
             .replace(/[.+^${}()|[\]\\]/g, '\\$&')
@@ -283,7 +295,7 @@ function buildChromeShim(extId,tabId,isBackground) {
     let __portIdCounter=0;
 
     function __send(type,payload,callback) {
-        const msgId=++msgIdCounter;
+        const msgId=++__msgIdCounter;
         const msg={__amethyst:true,type,extId:__extId,tabId:__tabId,msgId,payload};
         if (callback) __pendingCallbacks[msgId]=callback;
         window.parent!==window?window.parent.postMessage(msg,'*'):window.postMessage(msg,'*');
@@ -341,7 +353,7 @@ function buildChromeShim(extId,tabId,isBackground) {
         onStartup:__mkEvent(),
         onConnect:__mkEvent(),
         connect: (connectInfo) =>{
-            const portId='port_'+(++_portIdCounter);
+            const portId='port_'+(++__portIdCounter);
             __send('runtime.connect',{portId,name:connectInfo?.name,extId:__extId});
             return __mkPort(portId,connectInfo?.name);
         },
@@ -388,7 +400,7 @@ function buildChromeShim(extId,tabId,isBackground) {
         query:(queryInfo,cb)=>__send('tabs.query',queryInfo,cb),
         get:(tabId,cb)=>__send('tabs.get',{tabId},cb),
         create:(createProps,cb)=>__send('tabs.create',createProps,cb),
-        update:(tabId,updateProps,cb)=>__send('tabs.update',{tabId,updateProps}.cb),
+        update:(tabId,updateProps,cb)=>__send('tabs.update',{tabId,updateProps},cb),
         remove:(tabIds,cb)=>__send('tabs.remove',{tabIds},(r)=>cb&&cb()),
         sendMessage:(tabId,message,opts,cb)=>{
             const callback=typeof opts==='function'?opts:cb;
@@ -527,7 +539,7 @@ function buildChromeShim(extId,tabId,isBackground) {
     const scripting={
         executeScript:(injection,cb)=>__send('scripting.executeScript',injection,cb),
         insertCSS:(injection,cb)=>__send('scripting.insertCSS',injection,cb),
-        removeCSS:(injection.cb)=>__send('scripting.removeCSS',injection,cb),
+        removeCSS:(injection,cb)=>__send('scripting.removeCSS',injection,cb),
         registerContentScripts:(scripts,cb)=>__send('scripting.registerContentScripts',{scripts},cb),
         unregisterContentScripts:(filter,cb)=>__send('scripting.unregisterContentScripts',filter,cb),
         getRegisteredContentScripts:(filter,cb)=>__send('scripting.getRegisteredContentScripts',filter,cb),
@@ -560,7 +572,7 @@ function buildChromeShim(extId,tabId,isBackground) {
         getAll:(cb)=>__send('alarms.getAll',{},cb),
         clear:(name,cb)=>__send('alarms.clear',{name},(r)=>cb&&cb(r)),
         clearAll:(cb)=>__send('alarms.clearAll',{},(r)=>cb&&cb(r)),
-        onAlarms:__mkAlert(),
+        onAlarm:__mkEvent(),
     };
 
     //chrome.permissions
@@ -646,7 +658,7 @@ function buildChromeShim(extId,tabId,isBackground) {
 
     //chrome.system
     const system={
-        cpu:{getInfo:(cb)=>cb&&cb({numOfProcessors:4,arch-name:'x86-64',modelName:'Amethyst vCPU',features:[]})},
+        cpu:{getInfo:(cb)=>cb&&cb({numOfProcessors:4,'arch-name':'x86-64',modelName:'Amethyst vCPU',features:[]})},
         memory:{getInfo:(cb)=>cb&&cb({capacity:8*1024*1024*1024,availableCapacity:4*1024*1024*1024})},
         storage:{getInfo:(cb)=>cb&&cb([])},
         display:{getInfo:(cb)=>cb&&cb([{id:'0',isPrimary:true,isInternal:false,isEnabled:true,bounds:{left:0,top:0,width:screen.width,height:screen.height}}])},
@@ -753,7 +765,7 @@ async function handleShimMessage(event) {
         } catch (e) {}
     }
 
-    function fireEvent(targetExtid,eventName,args) {
+    function fireEvent(targetExtId,eventName,args) {
         const ext=_extensions[targetExtId];
         if (ext?.bgFrame) {
             try {
@@ -771,7 +783,7 @@ async function handleShimMessage(event) {
             const {area,keys}=payload;
             const result={};
             const allKeys=await dbGetAllKeys(EXT_STORAGE_STORE);
-            const prefix=`${extId}/${area}`;
+            const prefix=`${extId}/${area}/`;
             const relevantKeys=allKeys.filter(k=>k.startsWith(prefix));
             for (const k of relevantKeys) {
                 const shortKey=k.slice(prefix.length);
@@ -790,7 +802,7 @@ async function handleShimMessage(event) {
             reply(result);
             break;
         }
-        case 'storage.get': {
+        case 'storage.set': {
             const {area,items} = payload;
             for (const [key,value] of Object.entries(items)) {
                 await dbPut(EXT_STORAGE_STORE,`${extId}/${area}/${key}`,value);
@@ -1028,7 +1040,7 @@ async function handleShimMessage(event) {
 
         //cookies 
         case 'cookies.get': {
-            const frame=_getIframe(tabId);
+            const iframe=_getIframe(tabId);
             let val=null;
             if (iframe) {
                 try {
@@ -1197,7 +1209,7 @@ async function handleShimMessage(event) {
         //declarativeNetRequest
         case 'dnr.updateDynamicRules': {
             const {addRules,removeRuleIds}=payload;
-            if (!extensions[extId]) break;
+            if (!_extensions[extId]) break;
             const ext=_extensions[extId];
             if(!ext._dnrRules) ext._dnrRules=[];
             if (removeRuleIds) ext._dnrRules=ext._dnrRules.filter(r=>!removeRuleIds.includes(r.id));
@@ -1552,7 +1564,7 @@ function _getDefaultIcon(manifest) {
     if (!icons) return null;
     if (typeof icons==='string') return icons;
     const sizes=Object.keys(icons).map(Number).sort((a,b)=>b-a);
-    return icons[size[0]]||icons[Object.keys(icons)[0]];
+    return icons[sizes[0]]||icons[Object.keys(icons)[0]];
 }
 
 async function renderExtButton(extId) {
@@ -1565,7 +1577,7 @@ async function renderExtButton(extId) {
 
     const btn=document.createElement('button');
     btn.className='nav-btn amethyst-ext-btn';
-    btn.dataset.amethystExtId=extId;
+    btn.dataset.amethystExtid=extId;
     btn.title=ext._title||ext.manifest?.action?.default_title||ext.manifest?.browser_action?.default_title||ext.manifest?.name||'Extension';
     btn.style.position='relative';
 
@@ -1883,8 +1895,9 @@ async function loadExtension(meta) {
 async function loadMessages(extId,manifest) {
     const ext=_extensions[extId];
     const defaultLocale=manifest.default_locale||'en';
-    const msgPath=await readExtFileText(extId,msgPath);
-    if (msgPath) {
+    const msgPath=`_locales/${defaultLocale}/messages.json`;
+    const msgText=await readExtFileText(extId,msgPath);
+    if (msgText) {
         try {
             ext._messages=JSON.parse(msgText);
         } catch (e) {}
@@ -1932,8 +1945,8 @@ export function openExtManager() {
     header.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1a1a1a;flex-shrink:0;';
     header.innerHTML=`
     
-    <div class="display:flex;align-items:center;gap:10px;">
-        <div style="width:28px;height:28px;background:rgba(167,139,250,0.15);border:1px solid rgba(167,139,250,0.3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;"><i data-lucide="stone"></i></div>
+    <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:28px;height:28px;background:rgba(167,139,250,0.15);border:1px solid rgba(167,139,250,0.3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;"><i data-lucide="gem"></i></div>
         <div>
             <div style="font-size:14px;font-weight:600;color:#e0e0e0;">amethyst</div>
             <div style="font-size:11px;color:#505050;">extension runtime</div>
@@ -2057,7 +2070,7 @@ function _refreshExtList(list) {
                 }
             });
         } else {
-            iconEl.textContent='<i data-lucide="puzzle"></i>';
+            iconEl.innerHTML='<i data-lucide="puzzle"></i>';
         }
         const info = document.createElement('div');
         info.style.cssText=`flex:1;min-width:0;`;
@@ -2076,14 +2089,14 @@ function _refreshExtList(list) {
         font-family:'Geist';
         cursor:pointer;
         border:1px solid ${ext.enabled?'#1a3a1a':'#2a2a2a'};
-        background: ${ext.enabled?'rgba(34,197,94,0.1)':transparent};
+        background: ${ext.enabled?'rgba(34,197,94,0.1)':'transparent'};
         color:${ext.enabled?'#22c55e':'#808080'};
         transition: all 0.2s;`;
         toggleBtn.textContent=ext.enabled?'On':'Off';
         toggleBtn.addEventListener('click',async ()=>{
             ext.enabled=!ext.enabled;
             const stored=await dbGet(EXT_STORE,extId);
-            if (store) {stored.enabled=ext.enabled;await dbPut(EXT_STORE,null,stored);}
+            if (stored) {stored.enabled=ext.enabled;await dbPut(EXT_STORE,null,stored);}
             if (ext.enabled) {
                 await startBackground(extId);
                 await renderExtButton(extId);
@@ -2122,17 +2135,20 @@ export async function uninstallExtension(extId) {
 
     document.querySelector(`[data-amethyst-extid="${extId}"]`)?.remove();
 
-    const idx=_contentScriptReg.findIndex(cs=>cs.extId===extId);
-    if (idx>-1) _contentScriptReg.splice(idx,1);
+    const toRemove=_contentScriptReg.filter(cs=>cs.extId===extId);
+    toRemove.forEach(cs=>{
+        const i=_contentScriptReg.indexOf(cs);
+        if (i>-1) _contentScriptReg.splice(i,1);
+    });
 
     delete _extensions[extId];
     delete _contextMenus[extId];
     delete _alarms[extId];
 
     await dbDelete(EXT_STORE,extId);
-    const allFileKeys=await getGetAllKeys(EXT_FILES_STORE);
+    const allFileKeys=await dbGetAllKeys(EXT_FILES_STORE);
     for (const k of allFileKeys.filter(k=>k.startsWith(extId+'/'))) {
-        await dbDelete(EXT_FILE_STORE,k);
+        await dbDelete(EXT_FILES_STORE,k);
     }
     const allStorageKeys=await dbGetAllKeys(EXT_STORAGE_STORE);
     for (const k of allStorageKeys.filter(k=>k.startsWith(extId+'/'))) {
@@ -2196,6 +2212,7 @@ function _hook() {
     const aboutItem=document.getElementById('aboutItem');
     if (aboutItem) drMenu.insertBefore(item,aboutItem);
     else drMenu.appendChild(item);
+    lucide.createIcons();
 }
 
 const amethyst={
