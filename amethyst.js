@@ -1742,3 +1742,59 @@ window.addEventListener('message',(e)=>{
     }
 });
 
+// dnr engine
+export function checkDNR(requestUrl,initiatorUrl,resourceType) {
+    for (const[extId,ext] of Object.entries(_extensions)) {
+        if (!ext.enabled) continue;
+        const rules=[
+            ...(ext._dnrRules||[]),
+            ...(ext._staticRules||[])
+        ];
+        for (const rule of rules) {
+            const cond=rule.condition||{};
+            if (cond.urlFilter) {
+                const pattern=cond.urlFilter
+                    .replace(/[.+^${}()|[\]\\]/g,'\\$&')
+                    .replace(/\*/g,'.*')
+                    .replace(/\|\|/g,'(?:https?://)(?:[^/]*\\.)?')
+                    .replace(/\^/g,'[/?&#]');
+                try {
+                    if (!new RegExp(pattern,'i').test(requestUrl)) continue;
+                } catch (e) {continue;}
+            }
+            if (cond.regexFilter) {
+                try {
+                    if (!new RegExp(cond.regexFilter,'i').test(requestUrl)) continue;
+                } catch (e) {continue;}
+            }
+            if (cond.resourceTypes?.length) {
+                if (!cond.resourceTypes.includes(resourceType)) continue;
+            }
+            if (cond.initiatorDomains?.length) {
+                try {
+                    const init=new URL(initiatorUrl).hostname;
+                    if (!cond.initiatorDomains.some(d=>init===d||init.endsWith('.'+d))) continue;
+                } catch (e) {continue;}
+            }
+            if (cond.excludedInitiatorDomains?.length) {
+                try {
+                    const init=new URL(initiatorUrl).hostname;
+                    if (cond.excludedInitiatorDomains.some(d=>init===d||init.endsWith('.'+d))) continue;
+                } catch (e) {}
+            }
+            const action=rule.action||{};
+            if (action.type==='block') return {action:'block'};
+            if (action.type==='redirect') {
+                const redirectUrl=action.redirect?.url||action.redirect?.regexSubstitution;
+                if (redirectUrl) return {action:'redirect',url:redirectUrl};
+            }
+            if (action.type==='upgradeScheme') {
+                return {action:'redirect',url:requestUrl.replace(/^http:/,'https:')};
+            }
+            if (action.type==='modifyHeaders') {
+                return {action:'modifyHeaders',headers:action.requestHeaders||[],responseHeaders:action.responseHeaders||[]};
+            }
+        }
+    }
+    return null;
+}
