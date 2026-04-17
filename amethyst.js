@@ -1428,3 +1428,27 @@ export async function injectContentScripts(iframe,tabId,url) {
         },{once:true});
     }
 }
+
+//extension resource rewriter
+async function rewriteExtHtml(extId,html) {
+    const scriptRe=/<script\s+[^>]*src=["']([^"']+)["'][^>]*>/gi;
+    const cssRe=/<link\s+[^>]*href=["']([^"']+\.css)["'][^>]*>/gi;
+    let result=html;
+    const scriptMatches=[...html.matchAll(scriptRe)];
+    for (const m of scriptMatches) {
+        const path=m[1].replace(/^\//,'');
+        const code=await readExtFileText(extId, path);
+        if (code) {
+            result = result.replace(m[0],`<script>${code}<\/script>`);
+        }
+    }
+    const cssMatches=[...result.matchAll(cssRe)];
+    for (const m of cssMatches) {
+        const path=m[1].replace(/^\//,'');
+        const css=await readExtFileText(extId,path);
+        if (css) {
+            result=result.replace(m[0],`<style>${css}</style>`);
+        }
+    }
+    return result;
+}
