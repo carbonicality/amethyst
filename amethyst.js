@@ -2142,3 +2142,13 @@ export async function uninstallExtension(extId) {
     console.log('[amethyst] uninstalled ',extId);
 }
 
+//get all installed exts
+export function getInstalledExts() {
+    return Object.entries(_extensions).map(([id,ext])=>({
+        id,
+        name:ext.manifest?.name,
+        version:ext.manifest?.version,
+        enabled:ext.enabled,
+        manifest:ext.manifest,
+    }));
+}
