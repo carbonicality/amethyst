@@ -1542,3 +1542,94 @@ export function closeExtPopup() {
     }
     document.removeEventListener('click',_handlePopupOClick);
 }
+
+//toolbar btn renderer
+function _getDefaultIcon(manifest) {
+    const icons=manifest.action?.default_icon
+    ||manifest.browser_action?.default_icon
+    ||manifest.page_action?.default_icon
+    ||manifest.icons;
+    if (!icons) return null;
+    if (typeof icons==='string') return icons;
+    const sizes=Object.keys(icons).map(Number).sort((a,b)=>b-a);
+    return icons[size[0]]||icons[Object.keys(icons)[0]];
+}
+
+async function renderExtButton(extId) {
+    const ext=_extensions[extId];
+    if (!ext) return;
+    const addressBar=document.querySelector('.address-bar');
+    if (!addressBar) return;
+    
+    document.querySelector(`[data-amethyst-extid="${extId}"]`)?.remove();
+
+    const btn=document.createElement('button');
+    btn.className='nav-btn amethyst-ext-btn';
+    btn.dataset.amethystExtId=extId;
+    btn.title=ext._title||ext.manifest?.action?.default_title||ext.manifest?.browser_action?.default_title||ext.manifest?.name||'Extension';
+    btn.style.position='relative';
+
+    const iconPath=ext._iconUrl||(async () => {
+        const defaultIconPath=_getDefaultIcon(ext.manifest);
+        if (defaultIconPath) {
+            return await readExtFileURL(extId,defaultIconPath);
+        }
+        return null;
+    })();
+
+    const iconEl=document.createElement('div');
+    iconEl.style.cssText='width:16px;height:16px;display:flex;align-items:center;justify-content:center;';
+    const resolvedIconUrl=ext._iconUrl||await (async () => {
+        const p = _getDefaultIcon(ext.manifest);
+        return p?readExtFileURL(extId,p):null;
+    })();
+
+    if (resolvedIconUrl) {
+        const img=document.createElement('img');
+        img.src=resolvedIconUrl;
+        img.style.cssText='width:14px;height:14px;object-fit:contain;';
+        img.onerror=()=>{iconEl.innerHTML='<i data-lucide="puzzle"></i>';iconEl.style.fontSize='12px';};
+        iconEl.appendChild(img);
+    } else {
+        iconEl.innerHTML='<i data-lucide="puzzle"></i>';
+        iconEl.style.fontSize='12px';
+    }
+    btn.appendChild(iconEl);
+    if (ext._badgeText) {
+        const badge=document.createElement('div');
+        badge.style.cssText=`
+        position:absolute;
+        bottom:2px;
+        right:2px;
+        background:${ext._badgeColor||'#ef4444'};
+        color:${ext._badgeColor?'#000':'#fff'};
+        font-size:8px;
+        font-weight:700;
+        padding:1px 3px;
+        border-radius:4px;
+        font-weight:'Geist';
+        min-width:8px;
+        text-align:center;
+        line-height:1.2;
+        pointer-events:none;`;
+        badge.textContent=ext._badgeText;
+        btn.appendChild(badge);
+    }
+
+    btn.addEventListener('click',(e)=>{
+        e.stopPropagation();
+        fireEvent2Ext(extId,'action.onClicked',[_buildTabObj(_getActiveTabId?.())]);
+        fireEvent2Ext(extId,'browserAction.onClicked',[_buildTabObj(_getActiveTabId?.())]);
+        openExtPopup(extId);
+    });
+
+    const menuWpr=addressBar.querySelector('.menu-wpr');
+    if (menuWpr) addressBar.insertBefore(btn,menuWpr);
+    else addressBar.appendChild(btn);
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function _updateExtButton(extId) {
+    renderExtButton(extId);
+}
