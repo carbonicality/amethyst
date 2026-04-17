@@ -1294,3 +1294,81 @@ function injectCSS(iframe,css) {
     }
 }
 
+//background script runner
+async function startBackground(extId) {
+    const ext=_extensions[extId];
+    if (!ext) return;
+    const bgInfo=getBackgroundInfo(ext.manifest);
+    if (!bgInfo) return;
+    if (ext.bgFrame) {
+        ext.bgFrame.remove();
+        ext.bgFrame=null;
+    }
+    const bgFrame=document.createElement('iframe');
+    bgFrame.style.cssText='position:fixed;width:0;height:0;border:none;opacity:0;pointer-events:none;z-index:-1;';
+    bgFrame.setAttribute('sandbox','allow-scripts allow-same-origin');
+    document.body.appendChild(bgFrame);
+    ext.bgFrame=bgFrame;
+    const shimCode=buildChromeShim(extId,null,true);
+    if (bgInfo.type==='page') {
+        const htmlContent=await readExtFileText(extId,bgInfo.page);
+        if (!htmlContent) return;
+        const injected=htmlContent.replace(
+            /(<head[^>]*>)/i,
+            `$1<script>${shimCode}<\/script>`
+        );
+        const rewritten=await rewriteExtHtml(extId, injected);
+        const blob=new Blob([rewritten],{type:'text/html'});
+        bgFrame.src=URL.createObjectURL(blob);
+    } else if (bgInfo.type==='scripts') {
+        let scriptTags='';
+        for (const scriptPath of bgInfo.scripts) {
+            const code=await readExtFileText(extId,scriptPath);
+            if (code) scriptTags+=`<script>${await wrapExtScript(extId,code)}<\/script>\n`;
+        }
+        const html=`<!DOCTYPE html><html><head>
+        <script>${shimCode}</script>
+        ${scriptTags}
+        </head><body></body></html>`;
+        const blob=new Blob([html],{type:'text/html'});
+        bgFrame.src=URL.createObjectURL(blob);
+    } else if (bgInfo.type==='worker') {
+        bgFrame.remove();
+        ext.bgFrame=null;
+        const code=await readExtFileText(extId,bgInfo.script);
+        if (!code) return;
+        const workerCode=shimCode+'\n'+await wrapExtScript(extId,code);
+        const blob=new Blob([workerCode],{type:'application/javascript'});
+        const workerUrl=URL.createObjectURL(blob);
+        try {
+            const worker=new Worker(workerUrl);
+            ext.bgWorker=worker;
+            worker.addEventListener('message',(e)=>{
+                handleShimMessage({data:e.data,source:{postMessage:(msg)=>worker.postMessage(msg)}});
+            });
+        } catch (e) {
+            console.warn('[amethyst] worker start failed, falling back to iframe: ',e);
+        }
+    }
+    
+    bgFrame?.addEventListener('load',()=>{
+        setTimeout(()=>{
+            fireEvent2Ext(extId,'runtime.onInstalled',[{reason:'install'}]);
+            fireEvent2Ext(extId,'runtime.onStartup',[]);
+        },100);
+    });
+}
+
+function fireEvent2Ext(extId,eventName,args) {
+    const ext=_extensions[extId];
+    if (!ext) return;
+    const target =ext.bgFrame?.contentWindow||null;
+    if (!target) return;
+    try {
+        target.postMessage({
+            __amethyst_reply:true,extId,tabId:null,msgId:null,
+            event:eventName,args
+        },'*');
+    } catch (e) {}
+}
+
