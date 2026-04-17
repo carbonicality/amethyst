@@ -2112,3 +2112,33 @@ function _refreshExtList(list) {
     }
 }
 
+//uninstall
+export async function uninstallExtension(extId) {
+    const ext=_extensions[extId];
+    if (!ext) return;
+
+    ext.bgFrame?.remove();
+    ext.bgWorker?.terminate();
+
+    document.querySelector(`[data-amethyst-extid="${extId}"]`)?.remove();
+
+    const idx=_contentScriptReg.findIndex(cs=>cs.extId===extId);
+    if (idx>-1) _contentScriptReg.splice(idx,1);
+
+    delete _extensions[extId];
+    delete _contextMenus[extId];
+    delete _alarms[extId];
+
+    await dbDelete(EXT_STORE,extId);
+    const allFileKeys=await getGetAllKeys(EXT_FILES_STORE);
+    for (const k of allFileKeys.filter(k=>k.startsWith(extId+'/'))) {
+        await dbDelete(EXT_FILE_STORE,k);
+    }
+    const allStorageKeys=await dbGetAllKeys(EXT_STORAGE_STORE);
+    for (const k of allStorageKeys.filter(k=>k.startsWith(extId+'/'))) {
+        await dbDelete(EXT_STORAGE_STORE,k);
+    }
+
+    console.log('[amethyst] uninstalled ',extId);
+}
+
