@@ -1372,3 +1372,59 @@ function fireEvent2Ext(extId,eventName,args) {
     } catch (e) {}
 }
 
+//content script injector
+export async function injectContentScripts(iframe,tabId,url) {
+    if (!url||url==='krypton://new-tab') return;
+    const shimCode={};
+    const matching=_contentScriptReg.filter(cs=>urlMatchesPatterns(url,cs.matches));
+    if (!matching.length) return;
+    const byRunAt={document_start:[],document_end:[],document_idle:[]};
+    for (const cs of matching) {
+        const runAt=cs.runAt||'document_idle';
+        byRunAt[runAt]?.push(cs);
+    }
+    async function injectGroup(group) {
+        for (const cs of group) {
+            if (!shimCode[cs.extId]) {
+                shimCode[cs.extId]=buildChromeShim(cs.extId,tabId,false);
+            }
+            injectScript(iframe,shimCode[cs.extId],cs.extId);
+            if (!_tabMsgListeners[tabId]) _tabMsgListeners[tabId]=[];
+            if (cs.css?.length) {
+                for (const cssFile of cs.css) {
+                    const css=await readExtFileText(cs.extId,cssFile);
+                    if (css) injectCSS(iframe,css);
+                }
+            }
+            if (cs.js?.length) {
+                for (const jsFile of cs.js) {
+                    const code=await readExtFileText(cs.extId,jsFile);
+                    if(code){
+                        const wrapped=await wrapExtScript(cs.extId,code);
+                        injectScript(iframe,wrapped,cs.extId);
+                    }
+                }
+            }
+        }
+    }
+    await injectGroup(byRunAt.document_start);
+    if (byRunAt.document_end.length) {
+        iframe.addEventListener('load',async()=>{
+            await injectGroup(byRunAt.document_end);
+        },{once:true});
+    }
+    if (byRunAt.document_idle.length) {
+        iframe.addEventListener('load',async()=>{
+            setTimeout(async ()=>{
+                await injectGroup(byRunAt.document_idle);
+            },200);
+        },{once:true});
+    }
+
+    for (const extId of [...new Set(matching.map(cs=>cs.extId))]) {
+        fireEvent2Ext(extId,'tabs.onCompleted',[parseInt(tabId),{status:'loading'},_buildTabObj(tabId)]);
+        iframe.addEventListener('load',()=>{
+            fireEvent2Ext(extId,'tabs.onUpdated',[parseInt(tabId),{status:'complete'},_buildTabObj(tabId)]);
+        },{once:true});
+    }
+}
