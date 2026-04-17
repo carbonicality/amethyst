@@ -1452,3 +1452,93 @@ async function rewriteExtHtml(extId,html) {
     }
     return result;
 }
+
+async function wrapExtScript(extId,code) {
+    return code;
+}
+
+//popup system
+let _activePopup=null;
+
+export async function openExtPopup(extId) {
+    const ext=_extensions[extId];
+    if (!ext) return;
+    closeExtPopup();
+    const popupPage=ext._popupPage
+    ||ext.manifest?.action?.default_popup
+    ||ext.manifest?.browser_action?.default_popup
+    ||ext.manifest?.page_action?.default_popup;
+    if (!popupPage) return;
+    let htmlContent=await readExtFileText(extId,popupPage);
+    if (!htmlContent) return;
+    const shimCode=buildChromeShim(extId,_getActiveTabId?.(),false);
+    htmlContent=htmlContent.replace(
+        /(<head[^>]*>)/i,
+        `$1<script>${shimCode}<\/script>`
+    );
+    htmlContent=await rewriteExtHtml(extId,htmlContent);
+    const blob=new Blob([htmlContent],{type:'text/html'});
+    const blobUrl=URL.createObjectURL(blob);
+    const btn=document.querySelector(`[data-amethyst-extid="${extId}"]`);
+    const rect=btn?.getBoundingClientRect()||{left:0,bottom:40,width:0};
+    const wrapper=document.createElement('div');
+    wrapper.id='amethyst-popup-wrapper';
+    wrapper.style.cssText=`
+    position:fixed;
+    top:${rect.bottom+4}px;
+    right:${window.innerWidth-rect.right}px;
+    z-index:99999999999;
+    background:#0f0f0f;
+    border:1px solid #1a1a1a;
+    border-radius:8px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.6);
+    overflow:hidden;
+    animation:amethystPopIn 0.5s cubic-bezier(0.34,1.56,0.64,1);`;
+
+    if (!document.getElementById('amethyst-popup-style')) {
+        const style=document.createElement('style');
+        style.id='amethyst-popup-style';
+        style.textContent=`
+        @keyframes amethystPopIn {
+            from {opacity:0;transform:translateY(-8px) scale(0.95);}
+            to {opacity:1;transform:translateY(0) scale(1);}
+        }`;
+        document.head.appendChild(style);
+    }
+
+    const frame=document.createElement('iframe');
+    frame.src=blobUrl;
+    frame.style.cssText='border:none;display:block;min-width:200px;min-height:100px;max-width:800px;max-height:600px;';
+    frame.addEventListener('load',()=>{
+        try {
+            const body = frame.contentDocument?.body;
+            if (body) {
+                const w=Math.min(Math.max(body.scrollWidth+2,200),800);
+                const h=Math.min(Math.max(body.scrollHeight+2,100),600);
+                frame.style.width=w+'px';
+                frame.style.height=h+'px';
+            }
+        } catch (e) {}
+    });
+    wrapper.appendChild(frame);
+    document.body.appendChild(wrapper);
+    _activePopup=wrapper;
+
+    setTimeout(()=>{
+        document.addEventListener('click', _handlePopupOClick,{once:true});
+    },50);
+}
+
+function _handlePopupOClick(e) {
+    if (_activePopup&&!_activePopup.contains(e.target)) {
+        closeExtPopup();
+    }
+}
+
+export function closeExtPopup() {
+    if (_activePopup) {
+        _activePopup.remove();
+        _activePopup=null;
+    }
+    document.removeEventListener('click',_handlePopupOClick);
+}
