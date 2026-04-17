@@ -1826,3 +1826,56 @@ function initKeyboardShortcuts() {
         }
     });
 }
+
+//extension loader
+async function loadExtension(meta) {
+    const {id:extId,manifest}=meta;
+    _extensions[extId]={
+        manifest,
+        enabled:meta.enabled!==false,
+        _badgeText:'',
+        _badgeColor:null,
+        _iconUrl:null,
+        _title:null,
+        _popupPage:null,
+        _dnrRules:[],
+        _staticRules:[],
+        _messages:{},
+        bgFrame:null,
+        bgWorker:null,
+    };
+    const ext=_extensions[extId];
+    await loadMessages(extId,manifest);
+
+    const contentScripts=manifest.content_scripts||[];
+    for (const cs of contentScripts) {
+        _contentScriptReg.push({
+            extId,
+            matches:cs.matches||[],
+            excludeMatches:cs.exclude_matches||[],
+            js:cs.js||[],
+            css:cs.css||[],
+            runAt:cs.run_at||'document_idle',
+            allFrames:cs.all_frames||false,
+        });
+    }
+    //load static DNR
+    if (manifest.declarative_net_request?.rule_resources) {
+        for (const ruleSet of manifest.declarative_net_request.rule_resources) {
+            if (ruleSet.enabled!==false&&ruleSet.path) {
+                const rules=await readExtFileText(extId,ruleSet.path);
+                if (rules) {
+                    try {
+                        ext._staticRules.push(...JSON.parse(rules));
+                    } catch (e) {
+                        console.warn('[amethyst] failed to parse rule set: ',ruleSet.path,e);
+                    }
+                }
+            }
+        }
+    }
+    await renderExtButton(extId);
+    if (ext.enabled) {
+        await startBackground(extId);
+    }
+}
