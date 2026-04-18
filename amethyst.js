@@ -1,6 +1,8 @@
 /*
  *amethyst.js
  *extension runtime
+ *developed by carbon06 + decayedontop
+ *owned by discord.gg/Urq6MPabYY 
  */
 
 import JSZip from 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm';
@@ -149,15 +151,37 @@ function genExtId(name) {
  *install extension from ArrayBuffer
  */
 export async function installExtension(buffer,filename='extension.crx') {
-    const zipBuffer=crx2zip(buffer);
-    const zip=await JSZip.loadAsync(zipBuffer);
+    let zipBuffer;
+    try {
+        zipBuffer=crx2zip(buffer);
+    } catch (e) {
+        console.error('[amethyst] crx2zip failed:', e);
+        throw e;
+    }
+    let zip;
+    try {
+        zip=await JSZip.loadAsync(zipBuffer);
+    } catch (e) {
+        console.error('[amethyst] JSZip.loadAsync failed:', e);
+        throw e;
+    }
     const manifestFile=zip.file('manifest.json');
-    if (!manifestFile) throw new Error('no manifest.json found in extension');
-    const manifestText=await manifestFile.async('text');
+    if (!manifestFile) {
+        console.error('[amethyst] No manifest.json found in extension zip');
+        throw new Error('no manifest.json found in extension');
+    }
+    let manifestText;
+    try {
+        manifestText=await manifestFile.async('text');
+    } catch (e) {
+        console.error('[amethyst] Failed to read manifest.json:', e);
+        throw e;
+    }
     let manifest;
     try {
         manifest=JSON.parse(manifestText);
     } catch (e) {
+        console.error('[amethyst] Invalid manifest.json:', e);
         throw new Error('invalid manifest:'+e.message);
     }
     const extId=genExtId(manifest.name+(manifest.version||''));
@@ -171,11 +195,18 @@ export async function installExtension(buffer,filename='extension.crx') {
                     const key=`${extId}/${path}`;
                     await dbPut(EXT_FILES_STORE,key,ab);
                     files[path]=true;
+                }).catch(e => {
+                    console.error(`[amethyst] Failed to store file ${path} for ${manifest.name}:`, e);
                 })
             );
         }
     });
-    await Promise.all(fileOps);
+    try {
+        await Promise.all(fileOps);
+    } catch (e) {
+        console.error('[amethyst] Failed to store all extension files:', e);
+        throw e;
+    }
     const extMeta={
         id:extId,
         manifest,
@@ -184,8 +215,18 @@ export async function installExtension(buffer,filename='extension.crx') {
         filename,
         fileList:Object.keys(files),
     };
-    await dbPut(EXT_STORE,null,extMeta);
-    await loadExtension(extMeta);
+    try {
+        await dbPut(EXT_STORE,null,extMeta);
+    } catch (e) {
+        console.error('[amethyst] Failed to store extension metadata:', e);
+        throw e;
+    }
+    try {
+        await loadExtension(extMeta);
+    } catch (e) {
+        console.error(`[amethyst] Failed to load extension ${manifest.name}:`, e);
+        throw e;
+    }
     console.log(`[amethyst] installed: ${manifest.name}`);
     return extId;
 }
@@ -1842,6 +1883,7 @@ function initKeyboardShortcuts() {
 //extension loader
 async function loadExtension(meta) {
     const {id:extId,manifest}=meta;
+    console.log(`[amethyst] Loading extension: ${manifest.name} (${extId})`);
     _extensions[extId]={
         manifest,
         enabled:meta.enabled!==false,
@@ -1857,7 +1899,11 @@ async function loadExtension(meta) {
         bgWorker:null,
     };
     const ext=_extensions[extId];
-    await loadMessages(extId,manifest);
+    try {
+        await loadMessages(extId,manifest);
+    } catch (e) {
+        console.error(`[amethyst] Failed to load messages for ${manifest.name}:`, e);
+    }
 
     const contentScripts=manifest.content_scripts||[];
     for (const cs of contentScripts) {
@@ -1875,20 +1921,34 @@ async function loadExtension(meta) {
     if (manifest.declarative_net_request?.rule_resources) {
         for (const ruleSet of manifest.declarative_net_request.rule_resources) {
             if (ruleSet.enabled!==false&&ruleSet.path) {
-                const rules=await readExtFileText(extId,ruleSet.path);
-                if (rules) {
-                    try {
-                        ext._staticRules.push(...JSON.parse(rules));
-                    } catch (e) {
-                        console.warn('[amethyst] failed to parse rule set: ',ruleSet.path,e);
+                try {
+                    const rules=await readExtFileText(extId,ruleSet.path);
+                    if (rules) {
+                        try {
+                            ext._staticRules.push(...JSON.parse(rules));
+                        } catch (e) {
+                            console.warn('[amethyst] failed to parse rule set: ',ruleSet.path,e);
+                        }
+                    } else {
+                        console.warn(`[amethyst] Rule set file not found: ${ruleSet.path}`);
                     }
+                } catch (e) {
+                    console.error(`[amethyst] Error loading rule set ${ruleSet.path}:`, e);
                 }
             }
         }
     }
-    await renderExtButton(extId);
+    try {
+        await renderExtButton(extId);
+    } catch (e) {
+        console.error(`[amethyst] Failed to render extension button for ${manifest.name}:`, e);
+    }
     if (ext.enabled) {
-        await startBackground(extId);
+        try {
+            await startBackground(extId);
+        } catch (e) {
+            console.error(`[amethyst] Failed to start background for ${manifest.name}:`, e);
+        }
     }
 }
 
@@ -1915,7 +1975,6 @@ export function openExtManager() {
     document.getElementById('amethyst-manager')?.remove();
     const overlay=document.createElement('div');
     overlay.id='amethyst-manager';
-
     overlay.style.cssText=`
     position:fixed;
     inset:0;
